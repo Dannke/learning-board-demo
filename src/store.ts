@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { addContact, move, type Column, type Outcome, type Role, type State } from './domain'
+import { addContact, applyMove, type Column, type Outcome, type Role, type State } from './domain'
 import { makeSeed } from './seed'
 
 const KEY = 'learning-platform-demo-v1'
@@ -28,10 +28,9 @@ export function useApp() {
     /** Бросает Error с понятным текстом, если переход недопустим. */
     moveCard(cardId: string, to: Column, by: Role, o: { comment?: string; link?: string }) {
       const t = Date.now()
-      const card = state.cards.find(c => c.id === cardId)!
-      const next = move(card, to, by, t, o)
+      const next = applyMove(state, cardId, to, by, t, o) // бросает до setState, чтобы диалог показал ошибку
       setNow(t)
-      setState(s => ({ ...s, cards: s.cards.map(c => (c.id === cardId ? next : c)) }))
+      setState(next)
     },
     contact(studentId: string, note: string, outcome: Outcome) {
       const t = Date.now()

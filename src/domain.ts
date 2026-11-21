@@ -129,14 +129,32 @@ export function riskFlags(student: Student, modules: Module[], cards: Card[], no
 // --- операции над состоянием ---
 export const cardsOf = (state: State, studentId: string) => state.cards.filter(c => c.studentId === studentId)
 
+/** Возврат из паузы / молчания: план сдвигается на время отсутствия, чтобы не было ложного «отстаёт». */
+export function resume(s: Student, now: number): Student {
+  if (s.status === 'active') return s
+  return { ...s, status: 'active', start: s.start + (now - (s.statusAt ?? now)), statusAt: now, statusModule: undefined }
+}
+
 export function addContact(state: State, studentId: string, c: { note: string; outcome: Outcome }, now: number): State {
   return {
     ...state,
     students: state.students.map(s => {
       if (s.id !== studentId) return s
-      const status: Status = c.outcome === 'back' ? 'active' : c.outcome
+      const contacts = [...s.contacts, { at: now, ...c }]
+      if (c.outcome === 'back') return { ...resume(s, now), contacts }
       const mod = currentModule(state.modules, cardsOf(state, s.id))?.id
-      return { ...s, status, statusAt: now, statusModule: mod, contacts: [...s.contacts, { at: now, ...c }] }
+      return { ...s, status: c.outcome, statusAt: now, statusModule: mod, contacts }
     }),
+  }
+}
+
+/** Ход ученика по карточке сам снимает паузу/молчание. */
+export function applyMove(state: State, cardId: string, to: Column, by: Role, now: number, o: { comment?: string; link?: string }): State {
+  const card = state.cards.find(c => c.id === cardId)!
+  const next = move(card, to, by, now, o)
+  return {
+    ...state,
+    cards: state.cards.map(c => (c.id === cardId ? next : c)),
+    students: by === 'student' ? state.students.map(s => (s.id === card.studentId ? resume(s, now) : s)) : state.students,
   }
 }

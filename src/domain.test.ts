@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  D, H, canMove, currentModule, isOverdue, lagDays, moduleDeadlines, move, nextStep, reviewWaitMs, riskFlags, addContact,
+  D, H, canMove, currentModule, isOverdue, lagDays, moduleDeadlines, move, nextStep, reviewWaitMs, riskFlags, addContact, applyMove,
   type Card, type Module, type State, type Student,
 } from './domain'
 
@@ -128,5 +128,18 @@ describe('следующий шаг и контакт', () => {
     const s = addContact(state, 's1', { note: 'отпуск', outcome: 'pause' }, T0).students[0]
     expect(s).toMatchObject({ status: 'pause', statusAt: T0, statusModule: 'sql' })
     expect(s.contacts).toHaveLength(1)
+  })
+  it('возврат из паузы сдвигает план на её длину: нет ложного «отстаёт»', () => {
+    const paused = student({ status: 'pause', statusAt: T0 + 5 * D })
+    const state: State = { modules, students: [paused], cards: [card({ column: 'progress' })] }
+    const back = addContact(state, 's1', { note: '', outcome: 'back' }, T0 + 25 * D).students[0]
+    expect(back).toMatchObject({ status: 'active', start: T0 + 20 * D })
+    expect(lagDays(back, modules, state.cards, T0 + 26 * D)).toBe(0)
+  })
+  it('ход ученика снимает паузу, ход куратора — нет', () => {
+    const paused = student({ status: 'pause', statusAt: T0 })
+    const state: State = { modules, students: [paused], cards: [card(), inReview(T0, { id: 'r' })] }
+    expect(applyMove(state, 'c1', 'progress', 'student', T0 + D, {}).students[0].status).toBe('active')
+    expect(applyMove(state, 'r', 'done', 'curator', T0 + D, {}).students[0].status).toBe('pause')
   })
 })
