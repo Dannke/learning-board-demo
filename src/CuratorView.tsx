@@ -1,14 +1,17 @@
+import { ArrowLeft, ArrowRight, Clock, TrendingDown, Undo2 } from 'lucide-react'
 import { useState } from 'react'
 import { CardDialog } from './CardDialog'
 import {
-  cardsOf, currentModule, isOverdue, lagDays, lastStudentActivity, median, moduleDeadlines, reviewWaitMs, riskFlags,
+  cardsOf, currentModule, isOverdue, lagDays, lastStudentActivity, median, moduleDeadlines, REVIEW_SLA, reviewWaitMs, riskFlags,
   type Card, type Flag, type Outcome, type Student,
 } from './domain'
-import { fmtDate, fmtDur, STATUS_LABEL } from './format'
-import type { App } from './store'
+import { fmtDate, fmtDur, initials, STATUS_LABEL } from './format'
+import { RouteMini } from './Route'
+import { vt, type App } from './store'
 import { StudentView } from './StudentView'
 
 type Tab = 'review' | 'risk' | 'students'
+const ico = { size: 16, strokeWidth: 1.5, 'aria-hidden': true } as const
 
 export function CuratorView({ app }: { app: App }) {
   const { state, now } = app
@@ -28,64 +31,75 @@ export function CuratorView({ app }: { app: App }) {
   const name = (id: string) => state.students.find(s => s.id === id)!.name
   const modTitle = (id?: string) => state.modules.find(m => m.id === id)?.title ?? '—'
   const open = state.cards.find(c => c.id === openId)
+  const goBoard = (id: string | null) => vt(() => setBoard(id))
 
   if (board) return (
-    <>
-      <button className="ghost back" onClick={() => setBoard(null)}>← К списку</button>
-      <h2>Доска: {name(board)}</h2>
+    <div className="view enter">
+      <div className="board-head">
+        <button className="btn btn-ghost" onClick={() => goBoard(null)}><ArrowLeft {...ico} />К списку</button>
+        <h2>Доска ученика · {name(board)}</h2>
+      </div>
       <StudentView app={app} studentId={board} role="curator" />
-    </>
+    </div>
   )
 
   const queueTable = (rows: { c: Card; wait: number }[]) => (
-    <div className="table-wrap"><table className="table">
-      <thead><tr><th>Ученик</th><th>Задание</th><th>Модуль</th><th>Ждёт</th><th /></tr></thead>
+    <div className="table-wrap"><table className="table queue">
+      <thead><tr><th>Ученик</th><th>Задание</th><th>Модуль</th><th>Ждёт</th><th><span className="sr-only">Шкала 24 часа</span></th><th /></tr></thead>
       <tbody>{rows.map(({ c, wait }) => (
-        <tr key={c.id}>
-          <td>{name(c.studentId)}</td><td>{c.title}</td><td>{modTitle(c.moduleId)}</td>
-          <td className={isOverdue(c, now) ? 'late' : ''}>{fmtDur(wait)}</td>
-          <td><button onClick={() => setOpenId(c.id)}>Проверить</button></td>
+        <tr key={c.id} className="row-click" onClick={() => setOpenId(c.id)}>
+          <td><span className="cell-person"><span className="avatar" aria-hidden="true">{initials(name(c.studentId))}</span>{name(c.studentId)}</span></td>
+          <td>{c.title}</td>
+          <td className="cell-sub">{modTitle(c.moduleId)}</td>
+          <td className={`wait-big ${isOverdue(c, now) ? 'late' : ''}`}>{fmtDur(wait)}</td>
+          <td><Sla wait={wait} /></td>
+          <td className="td-end"><button className="btn btn-secondary" onClick={e => { e.stopPropagation(); setOpenId(c.id) }}>Проверить<ArrowRight {...ico} /></button></td>
         </tr>
       ))}</tbody>
     </table></div>
   )
 
+  const tabs: [Tab, string, number?][] = [['review', 'Проверка', queue.length], ['risk', 'На грани ухода', risky.length], ['students', 'Ученики']]
   return (
-    <>
-      <nav className="tabs" role="tablist">
-        {([['review', `Проверка (${queue.length})`], ['risk', `На грани ухода (${risky.length})`], ['students', 'Ученики']] as const).map(([id, label]) => (
-          <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? 'tab is-on' : 'tab'} onClick={() => setTab(id)}>{label}</button>
+    <div className="view">
+      <nav className="tabs" role="tablist" aria-label="Разделы куратора">
+        {tabs.map(([id, label, n]) => (
+          <button key={id} role="tab" aria-selected={tab === id} className="tab" onClick={() => setTab(id)}>
+            {label}{n !== undefined && <span className="tab-count">{n}</span>}
+          </button>
         ))}
       </nav>
 
-      {tab === 'review' && <section aria-label="Очередь проверки">
-        <p className="summary">Ждут проверки: <b>{queue.length}</b> · дольше 24 ч: <b className={over.length ? 'late' : ''}>{over.length}</b> · медиана ожидания: <b>{med === null ? '—' : fmtDur(med)}</b></p>
-        <h2>Ждут дольше 24 часов</h2>
-        {over.length ? queueTable(over) : <p className="muted">Таких нет.</p>}
-        <h2>Остальные в очереди</h2>
-        {queue.length > over.length ? queueTable(queue.filter(q => !isOverdue(q.c, now))) : <p className="muted">Очередь пуста.</p>}
+      {tab === 'review' && <section key="review" className="view enter" aria-label="Очередь проверки">
+        <div className="stats">
+          <Stat label="Ждут проверки" value={String(queue.length)} />
+          <Stat label="Дольше 24 ч" value={String(over.length)} late={over.length > 0} />
+          <Stat label="Медиана ожидания" value={med === null ? '—' : fmtDur(med)} />
+        </div>
+        <div className="section">
+          <h2 className="section-head"><span className="dot" style={{ background: 'var(--danger)' }} />Ждут дольше 24 часов</h2>
+          {over.length ? queueTable(over) : <p className="empty">Таких нет</p>}
+        </div>
+        <div className="section">
+          <h2 className="section-head"><span className="dot" />Остальные в очереди</h2>
+          {queue.length > over.length ? queueTable(queue.filter(q => !isOverdue(q.c, now))) : <p className="empty">Очередь пуста</p>}
+        </div>
       </section>}
 
-      {tab === 'risk' && <section aria-label="На грани ухода">
-        <p className="muted">Ученики, которые не двигали карточки 5+ дней, не реагируют на доработку 3+ дня или отстают от плана на 7+ дней. Свяжитесь и отметьте итог: ученик скроется из списка на 3 дня, а статус «пауза / молчит / ушёл» сохранится с датой и модулем.</p>
-        {risky.length === 0 ? <p className="muted">Сейчас никого.</p> : (
-          <ul className="risk-list">{risky.map(({ s, flags }) => (
-            <li key={s.id} className="risk">
-              <div className="risk-head">
-                <b>{s.name}</b> <span className="muted">модуль «{modTitle(currentModule(state.modules, cardsOf(state, s.id))?.id)}»</span>
-                <button className="ghost" onClick={() => setBoard(s.id)}>Доска</button>
-              </div>
-              <ul className="flags">{flags.map((f, i) => <li key={i}>{flagText(f, state.cards)}</li>)}</ul>
-              <ContactForm onSave={(n, o) => app.contact(s.id, n, o)} />
-            </li>
+      {tab === 'risk' && <section key="risk" className="view enter" aria-label="На грани ухода">
+        <p className="intro">Не двигали карточки 5+ дней, не реагируют на доработку 3+ дня или отстают от плана на 7+ дней. Свяжитесь и отметьте итог: ученик скроется из списка на 3 дня, а статус «пауза / молчит / ушёл» сохранится с датой и модулем.</p>
+        {risky.length === 0 ? <p className="empty">Сейчас никого</p> : (
+          <ul className="risk-grid">{risky.map(({ s, flags }) => (
+            <RiskCard key={s.id} s={s} flags={flags} module={modTitle(currentModule(state.modules, cardsOf(state, s.id))?.id)}
+              cards={state.cards} onBoard={() => goBoard(s.id)} onSave={(n, o) => app.contact(s.id, n, o)} />
           ))}</ul>
         )}
       </section>}
 
-      {tab === 'students' && <section aria-label="Ученики">
+      {tab === 'students' && <section key="students" className="view enter" aria-label="Ученики">
         <div className="table-wrap"><table className="table">
           <thead><tr><th>Ученик</th><th>Старт</th><th>Модуль</th><th>Темп</th><th>Последнее действие</th><th>Статус</th><th /></tr></thead>
-          <tbody>{state.students.map(s => <StudentRow key={s.id} s={s} app={app} onBoard={() => setBoard(s.id)} />)}</tbody>
+          <tbody>{state.students.map(s => <StudentRow key={s.id} s={s} app={app} onBoard={() => goBoard(s.id)} />)}</tbody>
         </table></div>
       </section>}
 
@@ -94,14 +108,55 @@ export function CuratorView({ app }: { app: App }) {
           deadline={moduleDeadlines(state.modules, state.students.find(s => s.id === open.studentId)!.start)[open.moduleId]}
           onMove={(to, o) => app.moveCard(open.id, to, 'curator', o)} onClose={() => setOpenId(null)} />
       )}
-    </>
+    </div>
   )
 }
 
+function Stat({ label, value, late }: { label: string; value: string; late?: boolean }) {
+  return <div className="panel stat"><span className="label">{label}</span><span className={`stat-value ${late ? 'late' : ''}`}>{value}</span></div>
+}
+
+/** Шкала ожидания: риска — 24 ч, правее риски — красным. Шкала до 72 ч. */
+function Sla({ wait }: { wait: number }) {
+  const W = 120, max = 3 * REVIEW_SLA, x = (ms: number) => (Math.min(ms, max) / max) * W, tick = x(REVIEW_SLA)
+  return (
+    <svg className="sla" viewBox={`0 0 ${W} 12`} aria-hidden="true">
+      <rect className="sla-track" x="0" y="4" width={W} height="4" rx="2" />
+      <rect className="sla-ok" x="0" y="4" width={Math.min(x(wait), tick)} height="4" rx="2" />
+      {wait > REVIEW_SLA && <rect className="sla-over" x={tick} y="4" width={x(wait) - tick} height="4" rx="2" />}
+      <line className="sla-tick" x1={tick} y1="0" x2={tick} y2="12" strokeWidth="1.5" />
+    </svg>
+  )
+}
+
+const FLAG_ICON = { silent: Clock, rework: Undo2, lag: TrendingDown }
 function flagText(f: Flag, cards: Card[]) {
   if (f.kind === 'silent') return `Не двигал карточки ${f.days} дн.`
   if (f.kind === 'lag') return `Отстаёт от плана на ${f.days} дн.`
   return `Доработка без реакции ${f.days} дн.: «${cards.find(c => c.id === f.cardId)?.title}»`
+}
+
+function RiskCard({ s, flags, module, cards, onBoard, onSave }: {
+  s: Student; flags: Flag[]; module: string; cards: Card[]; onBoard: () => void; onSave: (note: string, o: Outcome) => void
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <li className="panel risk">
+      <div className="risk-head">
+        <span className="avatar" aria-hidden="true">{initials(s.name)}</span>
+        <div><div className="risk-name">{s.name}</div><div className="label">модуль «{module}»</div></div>
+        <button className="btn btn-ghost" onClick={onBoard}>Доска<ArrowRight {...ico} /></button>
+      </div>
+      <ul className="flags">{flags.map((f, i) => {
+        const I = FLAG_ICON[f.kind]
+        return <li key={i} className="flag"><I {...ico} />{flagText(f, cards)}</li>
+      })}</ul>
+      {!open && <button className="btn btn-secondary" style={{ justifySelf: 'start' }} onClick={() => setOpen(true)} aria-expanded={false}>Отметить контакт</button>}
+      <div className={`disclosure ${open ? 'is-open' : ''}`}><div>
+        {open && <ContactForm onSave={onSave} onCancel={() => setOpen(false)} />}
+      </div></div>
+    </li>
+  )
 }
 
 function StudentRow({ s, app, onBoard }: { s: Student; app: App; onBoard: () => void }) {
@@ -113,28 +168,34 @@ function StudentRow({ s, app, onBoard }: { s: Student; app: App; onBoard: () => 
   const mod = (id?: string) => state.modules.find(m => m.id === id)?.title
   return (
     <tr>
-      <td>{s.name}</td><td>{fmtDate(s.start)}</td><td>{cur?.title ?? 'пройдено'}</td>
-      <td className={lag >= 7 ? 'late' : ''}>{lag ? `−${lag} дн.` : 'в графике'}</td>
-      <td>{fmtDur(now - lastStudentActivity(s, cards))} назад</td>
+      <td><span className="cell-person"><span className="avatar" aria-hidden="true">{initials(s.name)}</span>{s.name}</span></td>
+      <td className="mono cell-sub">{fmtDate(s.start)}</td>
+      <td>{cur?.title ?? 'пройдено'}</td>
+      <td><span className="pace-cell">
+        <RouteMini modules={state.modules} cards={cards} lag={lag} />
+        <span className={`mono ${lag >= 7 ? 'late' : 'cell-sub'}`} style={{ fontSize: 12 }}>{lag ? `−${lag} дн.` : 'в графике'}</span>
+      </span></td>
+      <td className="cell-sub">{fmtDur(now - lastStudentActivity(s, cards))} назад</td>
       <td>
-        {STATUS_LABEL[s.status]}{s.status !== 'active' && s.statusAt && <span className="muted"> с {fmtDate(s.statusAt)}, {mod(s.statusModule) ?? '—'}</span>}
-        {edit && <ContactForm onSave={(n, o) => { app.contact(s.id, n, o); setEdit(false) }} />}
+        <span className={`status status-${s.status}`}><span className="dot" />{STATUS_LABEL[s.status]}</span>
+        {s.status !== 'active' && s.statusAt && <div className="label">с {fmtDate(s.statusAt)}, {mod(s.statusModule) ?? '—'}</div>}
+        {edit && <ContactForm onSave={(n, o) => { app.contact(s.id, n, o); setEdit(false) }} onCancel={() => setEdit(false)} />}
       </td>
-      <td className="row-actions">
-        <button className="ghost" onClick={onBoard}>Доска</button>
-        {!edit && <button className="ghost" onClick={() => setEdit(true)}>Связался</button>}
+      <td className="td-end">
+        <button className="btn btn-ghost" onClick={onBoard}>Доска</button>
+        {!edit && <button className="btn btn-ghost" onClick={() => setEdit(true)}>Связался</button>}
       </td>
     </tr>
   )
 }
 
-function ContactForm({ onSave }: { onSave: (note: string, o: Outcome) => void }) {
+function ContactForm({ onSave, onCancel }: { onSave: (note: string, o: Outcome) => void; onCancel: () => void }) {
   const [note, setNote] = useState('')
   const [outcome, setOutcome] = useState<Outcome>('back')
   return (
     <form className="contact" onSubmit={e => { e.preventDefault(); onSave(note.trim(), outcome) }}>
       <label className="field">Что узнали
-        <input value={note} onChange={e => setNote(e.target.value)} placeholder="Например: завал на работе, вернётся в понедельник" />
+        <input value={note} onChange={e => setNote(e.target.value)} placeholder="Завал на работе, вернётся в понедельник" autoFocus />
       </label>
       <label className="field">Итог
         <select value={outcome} onChange={e => setOutcome(e.target.value as Outcome)}>
@@ -144,7 +205,10 @@ function ContactForm({ onSave }: { onSave: (note: string, o: Outcome) => void })
           <option value="left">Ушёл</option>
         </select>
       </label>
-      <button type="submit">Связался</button>
+      <div style={{ display: 'flex', gap: 8, gridColumn: '1 / -1' }}>
+        <button type="submit" className="btn btn-primary">Сохранить контакт</button>
+        <button type="button" className="btn btn-ghost" onClick={onCancel}>Отмена</button>
+      </div>
     </form>
   )
 }

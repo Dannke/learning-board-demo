@@ -8,6 +8,10 @@ export function fmtDur(ms: number): string {
 
 export const fmtDate = (ts: number) => new Date(ts).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })
 
-export const TYPE_LABEL: Record<CardType, string> = { theory: 'Теория', homework: 'Домашка', info: 'Инфо', extra: 'Доп.' }
+export const TYPE_LABEL: Record<CardType, string> = { theory: 'Теория', homework: 'Домашка', info: 'Организационное', extra: 'Дополнительно' }
+
+export const pad = (n: number) => String(n).padStart(2, '0')
+
+export const initials = (name: string) => name.split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase()
 
 export const STATUS_LABEL: Record<Status, string> = { active: 'Учится', pause: 'Пауза', silent: 'Молчит', left: 'Ушёл' }

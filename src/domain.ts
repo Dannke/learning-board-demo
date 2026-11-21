@@ -90,6 +90,17 @@ export function lagDays(student: Student, modules: Module[], cards: Card[], now:
   return Math.max(0, Math.floor((now - moduleDeadlines(modules, student.start)[m.id]) / D))
 }
 
+/** Где ученик должен быть по плану: индекс модуля + доля пройденного срока модуля, от 0 до modules.length − 1. */
+export function planPosition(modules: Module[], start: number, now: number): number {
+  let t = start
+  for (let i = 0; i < modules.length; i++) {
+    const end = t + modules[i].days * D
+    if (now < end) return Math.min(modules.length - 1, Math.max(0, i + (now - t) / (end - t)))
+    t = end
+  }
+  return modules.length - 1
+}
+
 export function lastStudentActivity(student: Student, cards: Card[]): number {
   return Math.max(student.start, ...cards.flatMap(c => c.history.filter(e => e.by === 'student').map(e => e.at)))
 }

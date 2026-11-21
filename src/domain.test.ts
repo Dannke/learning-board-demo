@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  D, H, canMove, currentModule, isOverdue, lagDays, moduleDeadlines, move, nextStep, reviewWaitMs, riskFlags, addContact, applyMove,
+  D, H, canMove, currentModule, isOverdue, lagDays, moduleDeadlines, move, nextStep, planPosition, reviewWaitMs, riskFlags, addContact, applyMove,
   type Card, type Module, type State, type Student,
 } from './domain'
 
@@ -45,6 +45,12 @@ describe('темп по плану модулей', () => {
     const cards = [card({ column: 'done' }), card({ id: 'x', type: 'extra' }), card({ id: 'c2', moduleId: 'sql' })]
     expect(currentModule(modules, cards)?.id).toBe('sql')
     expect(currentModule(modules, [card({ column: 'done' })])).toBeNull()
+  })
+  it('позиция по плану: доля срока модуля, до старта 0, после конца — последний модуль', () => {
+    expect(planPosition(modules, T0, T0 - D)).toBe(0)
+    expect(planPosition(modules, T0, T0 + 3.5 * D)).toBe(0.5)
+    expect(planPosition(modules, T0, T0 + 7 * D)).toBe(1)
+    expect(planPosition(modules, T0, T0 + 100 * D)).toBe(1)
   })
   it('отставание в полных днях после срока текущего модуля, не меньше 0', () => {
     const cards = [card()]

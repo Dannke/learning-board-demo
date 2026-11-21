@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { addContact, applyMove, type Column, type Outcome, type Role, type State } from './domain'
 import { makeSeed } from './seed'
 
@@ -29,8 +30,7 @@ export function useApp() {
     moveCard(cardId: string, to: Column, by: Role, o: { comment?: string; link?: string }) {
       const t = Date.now()
       const next = applyMove(state, cardId, to, by, t, o) // бросает до setState, чтобы диалог показал ошибку
-      setNow(t)
-      setState(next)
+      vt(() => { setNow(t); setState(next) })
     },
     contact(studentId: string, note: string, outcome: Outcome) {
       const t = Date.now()
@@ -45,3 +45,9 @@ export function useApp() {
   }
 }
 export type App = ReturnType<typeof useApp>
+
+/** Обновление через View Transitions: карточка переезжает в новую колонку, тема перетекает. Без поддержки — мгновенно. */
+export function vt(update: () => void) {
+  if (typeof document.startViewTransition !== 'function' || matchMedia('(prefers-reduced-motion: reduce)').matches) return update()
+  document.startViewTransition(() => flushSync(update))
+}
